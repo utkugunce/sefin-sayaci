@@ -549,6 +549,196 @@ function setupEventListeners() {
     saveCustomRecipe(newRecipe);
     closeModal();
   });
+
+  // URL Import Event
+  document.getElementById("import-url-btn").addEventListener("click", importRecipeFromUrl);
+  document.getElementById("recipe-url-input").addEventListener("keypress", (e) => {
+    if (e.key === "Enter") {
+      importRecipeFromUrl();
+    }
+  });
+}
+
+// Import Recipe from URL via allorigins CORS Proxy
+async function importRecipeFromUrl() {
+  const urlInput = document.getElementById("recipe-url-input");
+  const url = urlInput.value.trim();
+  const importBtn = document.getElementById("import-url-btn");
+
+  if (!url) {
+    alert("Lütfen geçerli bir yemek tarifi linki girin.");
+    return;
+  }
+
+  // Visual feedback (Loading state)
+  const originalBtnHTML = importBtn.innerHTML;
+  importBtn.disabled = true;
+  importBtn.innerHTML = `<i data-lucide="loader" class="animate-spin" style="width:16px;height:16px;"></i>`;
+  if (typeof lucide !== 'undefined') lucide.createIcons();
+
+  try {
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const response = await fetch(proxyUrl);
+    if (!response.ok) throw new Error("Ağ hatası oluştu.");
+    
+    const data = await response.json();
+    const html = data.contents;
+    
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    
+    // Parse Schema.org JSON-LD
+    const jsonLdScripts = doc.querySelectorAll('script[type="application/ld+json"]');
+    let recipeObj = null;
+
+    for (let script of jsonLdScripts) {
+      try {
+        const parsed = JSON.parse(script.textContent);
+        recipeObj = findRecipeInJson(parsed);
+        if (recipeObj) break;
+      } catch (e) {
+        // Skip malformed JSON
+      }
+    }
+
+    if (!recipeObj) {
+      throw new Error("Tarif bilgileri bu linkten otomatik olarak ayrıştırılamadı. Lütfen başka bir link deneyin veya tarifi elinizle ekleyin.");
+    }
+
+    // Process parsed recipe
+    const importedRecipe = processSchemaRecipe(recipeObj, url);
+    saveCustomRecipe(importedRecipe);
+    urlInput.value = "";
+    alert(`"${importedRecipe.title}" tarifi başarıyla aktarıldı!`);
+
+  } catch (error) {
+    alert("Hata: " + error.message);
+  } finally {
+    importBtn.disabled = false;
+    importBtn.innerHTML = originalBtnHTML;
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+  }
+}
+
+// Find recipe object inside JSON-LD graph/array/object
+function findRecipeInJson(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+
+  if (Array.isArray(obj)) {
+    for (let item of obj) {
+      const found = findRecipeInJson(item);
+      if (found) return found;
+    }
+  }
+
+  if (obj['@type'] === 'Recipe' || obj['type'] === 'Recipe') {
+    return obj;
+  }
+
+  if (obj['@graph']) {
+    return findRecipeInJson(obj['@graph']);
+  }
+
+  // Deep search in object keys
+  for (let key in obj) {
+    if (typeof obj[key] === 'object') {
+      const found = findRecipeInJson(obj[key]);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+// Convert ISO 8601 duration (e.g. PT15M, PT1H20M) to minutes
+function parseISO8601Duration(durationStr) {
+  if (!durationStr || typeof durationStr !== 'string') return 0;
+  const regex = /PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/;
+  const matches = durationStr.match(regex);
+  if (!matches) return 0;
+  const hours = parseInt(matches[1] || 0);
+  const minutes = parseInt(matches[2] || 0);
+  const seconds = parseInt(matches[3] || 0);
+  return (hours * 60) + minutes + Math.round(seconds / 60);
+}
+
+// Parse Instructions schema
+function extractInstructions(instructions) {
+  if (!instructions) return [];
+  if (typeof instructions === 'string') return [instructions];
+  if (Array.isArray(instructions)) {
+    return instructions.map(step => {
+      if (typeof step === 'string') return step;
+      if (typeof step === 'object') {
+        if (step.text) return step.text;
+        if (step.name && step.itemListElement) {
+          // Inside a HowToSection
+          return extractInstructions(step.itemListElement);
+        }
+      }
+      return '';
+    }).flat().filter(text => text !== '');
+  }
+  return [];
+}
+
+// Parse Image Schema
+function extractImage(image) {
+  if (!image) return null;
+  if (typeof image === 'string') return image;
+  if (Array.isArray(image)) {
+    return typeof image[0] === 'string' ? image[0] : (image[0].url || null);
+  }
+  if (typeof image === 'object') return image.url || null;
+  return null;
+}
+
+// Process Recipe JSON into App Format
+function processSchemaRecipe(recipe, sourceUrl) {
+  const title = recipe.name || "İsimsiz Tarif";
+  const description = recipe.description || "";
+  
+  let category = "Ana Yemek";
+  if (recipe.recipeCategory) {
+    const cat = Array.isArray(recipe.recipeCategory) ? recipe.recipeCategory[0] : recipe.recipeCategory;
+    if (typeof cat === 'string') {
+      if (cat.toLowerCase().includes("tatlı") || cat.toLowerCase().includes("dessert")) category = "Tatlı";
+      else if (cat.toLowerCase().includes("çorba") || cat.toLowerCase().includes("soup")) category = "Çorba";
+      else category = cat;
+    }
+  }
+
+  const image = extractImage(recipe.image);
+  const prepTime = parseISO8601Duration(recipe.prepTime) || 15;
+  const cookTime = parseISO8601Duration(recipe.cookTime) || 20;
+  
+  let servings = 2;
+  if (recipe.recipeYield) {
+    if (typeof recipe.recipeYield === 'number') {
+      servings = recipe.recipeYield;
+    } else if (typeof recipe.recipeYield === 'string') {
+      const match = recipe.recipeYield.match(/\d+/);
+      if (match) servings = parseInt(match[0]);
+    }
+  }
+
+  const ingredients = Array.isArray(recipe.recipeIngredient) ? recipe.recipeIngredient : [];
+  const instructions = extractInstructions(recipe.recipeInstructions);
+
+  return {
+    id: "imported-" + Date.now(),
+    title,
+    description,
+    category,
+    image,
+    prepTime,
+    cookTime,
+    servings,
+    difficulty: "Orta",
+    ingredients,
+    instructions,
+    sourceUrl
+  };
 }
 
 function closeModal() {
@@ -566,3 +756,4 @@ function registerServiceWorker() {
     });
   }
 }
+
