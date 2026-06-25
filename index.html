@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Şefin Sayacı - İnteraktif Tarifler & Sayaçlar</title>
+  
+  <!-- PWA Meta -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#f97316">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ŞefinSayacı">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-logo">
+        <div class="logo-icon">
+          <i data-lucide="chef-hat"></i>
+        </div>
+        <div class="logo-text">
+          <h1>Şefin Sayacı</h1>
+          <p>İnteraktif Süreli Tarifler</p>
+        </div>
+      </div>
+      
+      <div class="header-actions">
+        <button id="theme-toggle" class="btn-icon" title="Tema Değiştir">
+          <i data-lucide="moon" class="theme-icon-dark"></i>
+          <i data-lucide="sun" class="theme-icon-light" style="display: none;"></i>
+        </button>
+        <button id="add-recipe-btn" class="btn btn-primary">
+          <i data-lucide="plus"></i>
+          <span>Yeni Tarif Ekle</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Grid Content -->
+    <main class="app-main">
+      <!-- Sidebar / Recipe List -->
+      <section class="sidebar-section">
+        <div class="search-bar">
+          <i data-lucide="search" class="search-icon"></i>
+          <input type="text" id="recipe-search" placeholder="Tarif ara veya kategori seç...">
+        </div>
+        
+        <div class="categories-tabs">
+          <button class="tab-btn active" data-category="hepsi">Hepsi</button>
+          <button class="tab-btn" data-category="Tatlı">Tatlı</button>
+          <button class="tab-btn" data-category="Ana Yemek">Ana Yemek</button>
+          <button class="tab-btn" data-category="Çorba">Çorba</button>
+        </div>
+
+        <div class="recipes-list" id="recipes-list">
+          <!-- Recipes will be injected here via JavaScript -->
+        </div>
+      </section>
+
+      <!-- Active Recipe Content Area -->
+      <section class="content-section" id="active-recipe-section">
+        <div class="welcome-view" id="welcome-view">
+          <i data-lucide="utensils-crossed" class="welcome-icon"></i>
+          <h2>Lezzetli Bir Yolculuğa Başlayın</h2>
+          <p>Sol menüden bir tarif seçin veya yeni bir tane ekleyerek adımları takip edin. Süreli adımlar otomatik olarak sayaçlara dönüşecektir.</p>
+        </div>
+        
+        <div class="recipe-detail-view" id="recipe-detail-view" style="display: none;">
+          <!-- Recipe detail dynamically injected here -->
+        </div>
+      </section>
+    </main>
+
+    <!-- Floating / Active Timers Panel -->
+    <div class="active-timers-panel" id="active-timers-panel">
+      <div class="timers-panel-header" id="timers-panel-trigger">
+        <div class="panel-title">
+          <i data-lucide="timer"></i>
+          <span>Aktif Sayaçlar</span>
+          <span class="timer-badge-count" id="timer-badge-count">0</span>
+        </div>
+        <i data-lucide="chevron-up" class="panel-chevron" id="panel-chevron"></i>
+      </div>
+      <div class="timers-list" id="timers-list">
+        <!-- Running timers will be shown here -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Recipe Modal -->
+  <div class="modal-overlay" id="add-recipe-modal" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Yeni Tarif Oluştur</h2>
+        <button class="btn-icon" id="close-modal-btn">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <form id="add-recipe-form" class="modal-body">
+        <div class="form-group">
+          <label for="recipe-title">Tarif Adı <span class="required">*</span></label>
+          <input type="text" id="recipe-title" required placeholder="Örn: Ev Yapımı Lazanya">
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="recipe-category">Kategori <span class="required">*</span></label>
+            <select id="recipe-category" required>
+              <option value="Ana Yemek">Ana Yemek</option>
+              <option value="Tatlı">Tatlı</option>
+              <option value="Çorba">Çorba</option>
+              <option value="Atıştırmalık">Atıştırmalık</option>
+              <option value="Kahvaltı">Kahvaltı</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="recipe-difficulty">Zorluk <span class="required">*</span></label>
+            <select id="recipe-difficulty" required>
+              <option value="Kolay">Kolay</option>
+              <option value="Orta" selected>Orta</option>
+              <option value="Zor">Zor</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="recipe-prep">Hazırlık Süresi (dk)</label>
+            <input type="number" id="recipe-prep" min="0" value="15">
+          </div>
+          <div class="form-group">
+            <label for="recipe-cook">Pişirme Süresi (dk)</label>
+            <input type="number" id="recipe-cook" min="0" value="20">
+          </div>
+          <div class="form-group">
+            <label for="recipe-servings">Porsiyon</label>
+            <input type="number" id="recipe-servings" min="1" value="2">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="recipe-desc">Açıklama</label>
+          <textarea id="recipe-desc" rows="2" placeholder="Tarif hakkında kısa bir bilgi..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="recipe-image">Görsel URL</label>
+          <input type="url" id="recipe-image" placeholder="https://images.unsplash.com/... (Boş bırakılırsa varsayılan atanır)">
+        </div>
+
+        <div class="form-group">
+          <label for="recipe-ingredients">Malzemeler (Her satıra bir malzeme)</label>
+          <textarea id="recipe-ingredients" rows="4" required placeholder="250g un&#10;1 su bardağı süt&#10;1 çay kaşığı tuz"></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="recipe-instructions">Hazırlanış Adımları (Her satıra bir adım)</label>
+          <textarea id="recipe-instructions" rows="5" required placeholder="Malzemeleri bir kaba alın ve 2 dakika mikserle çırpın.&#10;Hamuru 15 dakika dinlendirin.&#10;Fırında 20 dakika pişirin."></textarea>
+          <small class="form-hint">İpucu: Adımların içine "3 dakika", "15 saniye", "1.5 saat" gibi ifadeler eklerseniz uygulama otomatik olarak tıklanabilir sayaçlar oluşturacaktır.</small>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancel-modal-btn">Vazgeç</button>
+          <button type="submit" class="btn btn-primary">Tarifi Kaydet</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="recipes.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
