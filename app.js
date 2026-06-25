@@ -602,11 +602,24 @@ async function importRecipeFromUrl() {
     }
 
     if (!recipeObj) {
+      // Fallback: Scrape DOM directly using common recipe page selectors (e.g. Nefis Yemek Tarifleri)
+      recipeObj = scrapeRecipeFromDOM(doc);
+    }
+
+    if (!recipeObj) {
       throw new Error("Tarif bilgileri bu linkten otomatik olarak ayrıştırılamadı. Lütfen başka bir link deneyin veya tarifi elinizle ekleyin.");
     }
 
     // Process parsed recipe
-    const importedRecipe = processSchemaRecipe(recipeObj, url);
+    let importedRecipe;
+    if (recipeObj.isDOMScraped) {
+      importedRecipe = recipeObj;
+      importedRecipe.id = "imported-" + Date.now();
+      importedRecipe.sourceUrl = url;
+    } else {
+      importedRecipe = processSchemaRecipe(recipeObj, url);
+    }
+    
     saveCustomRecipe(importedRecipe);
     urlInput.value = "";
     alert(`"${importedRecipe.title}" tarifi başarıyla aktarıldı!`);
@@ -618,6 +631,79 @@ async function importRecipeFromUrl() {
     importBtn.innerHTML = originalBtnHTML;
     if (typeof lucide !== 'undefined') lucide.createIcons();
   }
+}
+
+// Scrape recipe details directly from the parsed DOM structure
+function scrapeRecipeFromDOM(doc) {
+  // Title Selectors
+  const titleEl = doc.querySelector('.recipe-name, h1.entry-title, h1[itemprop="name"], h1.recipe-title, .recipe-head-content h1');
+  const title = titleEl ? titleEl.textContent.trim() : null;
+
+  if (!title) return null; // If we can't even find a title, scraping failed
+
+  // Image Selectors
+  const imgEl = doc.querySelector('.recipe-image, img[itemprop="image"], img.recipe-main-image, .recipe-single-img img, img.attachment-recipe-single-img');
+  let image = null;
+  if (imgEl) {
+    // Try to get src, or fallback to data-src/lazy sources
+    image = imgEl.getAttribute('src') || imgEl.getAttribute('data-src') || imgEl.src;
+    // Resolve relative URLs
+    if (image && image.startsWith('//')) {
+      image = 'https:' + image;
+    }
+  }
+
+  // Ingredients Selectors
+  const ingredientEls = doc.querySelectorAll('.recipe-materials li, .ingredients-list li, [itemprop="recipeIngredient"] li, .recipe-materials-div li');
+  const ingredients = [];
+  ingredientEls.forEach(el => {
+    const text = el.textContent.replace(/\s+/g, ' ').trim();
+    if (text) ingredients.push(text);
+  });
+
+  // Instructions Selectors
+  const instructionEls = doc.querySelectorAll('.recipe-instructions li, .recipe-preparation li, .instructions-list li, [itemprop="recipeInstructions"] li, .recipe-preparation p');
+  const instructions = [];
+  instructionEls.forEach(el => {
+    const text = el.textContent.replace(/\s+/g, ' ').trim();
+    if (text) instructions.push(text);
+  });
+
+  // If no ingredients or instructions found, scraping is considered failed
+  if (ingredients.length === 0 && instructions.length === 0) {
+    return null;
+  }
+
+  // Prep and Cook Times (try to scrape from common info panels)
+  let prepTime = 15;
+  let cookTime = 20;
+  
+  const infoText = doc.body.textContent;
+  // Look for text patterns like "Hazırlama: X dk" or "Pişirme: Y dk"
+  const prepMatch = infoText.match(/(?:hazırlama|prep|hazırlık)\s*[:\-]?\s*(\d+)\s*(?:dk|dakika|min)/i);
+  if (prepMatch) prepTime = parseInt(prepMatch[1]);
+  
+  const cookMatch = infoText.match(/(?:pişirme|cook|pişme)\s*[:\-]?\s*(\d+)\s*(?:dk|dakika|min)/i);
+  if (cookMatch) cookTime = parseInt(cookMatch[1]);
+
+  // Yield / Servings
+  let servings = 2;
+  const yieldMatch = infoText.match(/(\d+)\s* kişilik/i);
+  if (yieldMatch) servings = parseInt(yieldMatch[1]);
+
+  return {
+    isDOMScraped: true,
+    title,
+    description: "",
+    category: "Ana Yemek",
+    image,
+    prepTime,
+    cookTime,
+    servings,
+    difficulty: "Orta",
+    ingredients,
+    instructions
+  };
 }
 
 // Find recipe object inside JSON-LD graph/array/object
